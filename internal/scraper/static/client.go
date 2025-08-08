@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/UnknownOlympus/hermes/internal/config"
+	pb "github.com/UnknownOlympus/olympus-protos/gen/go/scraper/olympus"
 )
 
 var (
@@ -26,6 +27,12 @@ type Scraper struct {
 	client *http.Client
 	cfg    *config.Config
 	log    *slog.Logger
+}
+
+type ScraperIface interface {
+	GetEmployees(ctx context.Context) ([]*pb.Employee, string, error)
+	GetTaskTypes(ctx context.Context) ([]string, string, error)
+	GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task, string, error)
 }
 
 // NewScraper creates a new client, configures it, and performs login.

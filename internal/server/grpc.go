@@ -13,11 +13,11 @@ import (
 
 type Server struct {
 	pb.UnimplementedScraperServiceServer
-	scraper *static.Scraper
+	scraper static.ScraperIface
 	log     *slog.Logger
 }
 
-func NewGRPCServer(logger *slog.Logger, scraper *static.Scraper) *Server {
+func NewGRPCServer(logger *slog.Logger, scraper static.ScraperIface) *Server {
 	return &Server{log: logger, scraper: scraper}
 }
 
