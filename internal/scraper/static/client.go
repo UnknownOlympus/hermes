@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -138,7 +139,13 @@ func (s *Scraper) getHTMLResponse(ctx context.Context, data *url.Values) (*http.
 	return resp, nil
 }
 
-func calculateHash(data interface{}) (string, error) {
+func calculateSortedHash[T any](data []T, less func(i, j int) bool) (string, error) {
+	if len(data) == 0 {
+		return fmt.Sprintf("%x", sha256.Sum256([]byte("[]"))), nil
+	}
+
+	sort.Slice(data, less)
+
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode hash to json: %w", err)

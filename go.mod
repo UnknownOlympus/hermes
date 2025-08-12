@@ -5,7 +5,7 @@ go 1.24.5
 require (
 	github.com/Flaque/filet v0.0.0-20201012163910-45f684403088
 	github.com/PuerkitoBio/goquery v1.10.3
-	github.com/UnknownOlympus/olympus-protos v0.1.2-0.20250804154130-df58a774e61a
+	github.com/UnknownOlympus/olympus-protos v0.2.0
 	github.com/joho/godotenv v1.5.1
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.74.2

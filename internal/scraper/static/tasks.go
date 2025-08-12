@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/PuerkitoBio/goquery"
 	pb "github.com/UnknownOlympus/olympus-protos/gen/go/scraper/olympus"
@@ -53,7 +54,9 @@ func (s *Scraper) GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task
 		allTasks = append(allTasks, res.tasks...)
 	}
 
-	hash, err := calculateHash(allTasks)
+	hash, err := calculateSortedHash(allTasks, func(i, j int) bool {
+		return allTasks[i].Id < allTasks[j].Id
+	})
 	if err != nil {
 		return nil, "", err
 	}
@@ -146,6 +149,10 @@ func (s *Scraper) parseTasksFromBody(body io.Reader, isCompleted bool) ([]*pb.Ta
 		task.Address = strings.TrimSpace(row.Find(selectors.address).Text())
 		task.Type = strings.TrimSpace(row.Find(selectors.taskType + " b").First().Text())
 		task.Description = strings.TrimSpace(row.Find(selectors.description).Text())
+		if !utf8.ValidString(task.Description) {
+			task.Description = ""
+			s.log.Warn("Description contains invalid UTF-8 symbols, cleared.", "id", task.Id)
+		}
 
 		customerHTML, _ := row.Find(selectors.customer).Html()
 		task.CustomerName, task.CustomerLogin = ParseCustomerInfo(customerHTML, s.log)
@@ -237,7 +244,9 @@ func (s *Scraper) GetTaskTypes(ctx context.Context) ([]string, string, error) {
 		allTaskTypes = append(allTaskTypes, taskTypesFromPage...)
 	}
 
-	hash, err := calculateHash(allTaskTypes)
+	hash, err := calculateSortedHash(allTaskTypes, func(i, j int) bool {
+		return strings.ToLower(allTaskTypes[i]) < strings.ToLower(allTaskTypes[j])
+	})
 	if err != nil {
 		return nil, "", err
 	}

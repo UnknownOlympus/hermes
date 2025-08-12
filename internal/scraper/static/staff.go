@@ -36,7 +36,9 @@ func (s *Scraper) GetEmployees(ctx context.Context) ([]*pb.Employee, string, err
 
 	fullStaff := s.updateStaffShortNames(staff, shortnames)
 
-	hash, err := calculateHash(fullStaff)
+	hash, err := calculateSortedHash(fullStaff, func(i, j int) bool {
+		return fullStaff[i].Id < fullStaff[j].Id
+	})
 	if err != nil {
 		return nil, "", err
 	}
