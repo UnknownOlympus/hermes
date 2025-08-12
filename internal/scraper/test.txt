@@ -1,0 +1,70 @@
+// package scraper
+
+// import (
+// 	"context"
+// 	"fmt"
+// 	"log/slog"
+// 	"sync"
+
+// 	"github.com/UnknownOlympus/hermes/internal/config"
+// 	"github.com/chromedp/chromedp"
+// )
+
+// // Client is the scraper client that manages the scraping process.
+// type Client struct {
+// 	allocatorCtx context.Context
+// 	cancel       context.CancelFunc
+// 	mu           sync.Mutex
+// 	cfg          *config.Config
+// 	log          *slog.Logger
+// }
+
+// // NewClient creates a new scraper client with the provided configuration.
+// func NewClient(cfg *config.Config, log *slog.Logger) (*Client, error) {
+// 	opts := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.Flag("headless", true), chromedp.Flag("disable-gpu", true))
+// 	allocatorCtx, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
+
+// 	client := &Client{
+// 		allocatorCtx: allocatorCtx,
+// 		cancel:       cancel,
+// 		cfg:          cfg,
+// 		log:          log,
+// 	}
+
+// 	if err := client.login(); err != nil {
+// 		return nil, fmt.Errorf("initital login failed: %w", err)
+// 	}
+
+// 	client.log.Info("Scraper client inititalized and logged in successfully.")
+// 	return client, nil
+// }
+
+// // login performs the login operation using the provided credentials.
+// func (c *Client) login() error {
+// 	ctx, cancel := chromedp.NewContext(c.allocatorCtx)
+// 	defer cancel()
+
+// 	c.log.InfoContext(ctx, "Attempting to log in to the site...")
+
+// 	err := chromedp.Run(ctx,
+// 		chromedp.Navigate(c.cfg.LoginURL),
+// 		chromedp.WaitVisible(`input[name="username"]`, chromedp.ByQuery),
+// 		chromedp.WaitVisible(`input[name="password"]`, chromedp.ByQuery),
+// 		chromedp.SendKeys(`input[name="username"]`, c.cfg.Username, chromedp.ByQuery),
+// 		chromedp.SendKeys(`input[name="password"]`, c.cfg.Password, chromedp.ByQuery),
+// 		chromedp.Click(`input[type="submit"]`, chromedp.ByQuery),
+// 		chromedp.WaitVisible(`#menuLogoTd`, chromedp.ByQuery),
+// 	)
+// 	if err != nil {
+// 		c.log.ErrorContext(ctx, "Login automation failed", "error", err)
+// 		return fmt.Errorf("login automation failed: %w", err)
+// 	}
+
+// 	c.log.InfoContext(ctx, "Login successful, session cookies are now stored.")
+// 	return nil
+// }
+
+// // Close cleans up the resources used by the scraper client.
+// func (c *Client) Close() {
+// 	c.cancel()
+// }
