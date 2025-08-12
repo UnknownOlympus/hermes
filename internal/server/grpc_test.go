@@ -73,29 +73,29 @@ func TestGetEmployees(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tce := range testCases {
+		t.Run(tce.name, func(t *testing.T) {
 			// ARRANGE
 			mockScraper := mocks.NewScraperIface(t)
-			if tc.setupMock != nil {
-				tc.setupMock(mockScraper)
+			if tce.setupMock != nil {
+				tce.setupMock(mockScraper)
 			}
 			server := server.NewGRPCServer(logger, mockScraper)
 
 			// ACT
-			resp, err := server.GetEmployees(ctx, tc.req)
+			resp, err := server.GetEmployees(ctx, tce.req)
 
 			// ASSERT
-			if tc.expectedErrCode == codes.OK {
+			if tce.expectedErrCode == codes.OK {
 				require.NoError(t, err)
 				require.NotNil(t, resp)
-				assert.Equal(t, tc.expectedResp.GetNewHash(), resp.GetNewHash())
-				assert.ElementsMatch(t, tc.expectedResp.GetEmployees(), resp.GetEmployees())
+				assert.Equal(t, tce.expectedResp.GetNewHash(), resp.GetNewHash())
+				assert.ElementsMatch(t, tce.expectedResp.GetEmployees(), resp.GetEmployees())
 			} else {
 				require.Error(t, err)
 				st, ok := status.FromError(err)
 				require.True(t, ok)
-				assert.Equal(t, tc.expectedErrCode, st.Code())
+				assert.Equal(t, tce.expectedErrCode, st.Code())
 			}
 
 			mockScraper.AssertExpectations(t)
@@ -161,26 +161,26 @@ func TestGetDailyTasks(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tce := range testCases {
+		t.Run(tce.name, func(t *testing.T) {
 			// ARRANGE
 			mockScraper := mocks.NewScraperIface(t)
-			if tc.setupMock != nil {
-				tc.setupMock(mockScraper)
+			if tce.setupMock != nil {
+				tce.setupMock(mockScraper)
 			}
 			server := server.NewGRPCServer(logger, mockScraper)
 
 			// ACT
-			_, err := server.GetDailyTasks(ctx, tc.req)
+			_, err := server.GetDailyTasks(ctx, tce.req)
 
 			// ASSERT
-			if tc.expectedErrCode == codes.OK {
+			if tce.expectedErrCode == codes.OK {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err)
 				st, ok := status.FromError(err)
 				require.True(t, ok)
-				assert.Equal(t, tc.expectedErrCode, st.Code())
+				assert.Equal(t, tce.expectedErrCode, st.Code())
 			}
 
 			mockScraper.AssertExpectations(t)
@@ -241,31 +241,31 @@ func TestGetTaskTypes(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, tce := range testCases {
+		t.Run(tce.name, func(t *testing.T) {
 			// ARRANGE
 			mockScraper := mocks.NewScraperIface(t)
-			if tc.setupMock != nil {
-				tc.setupMock(mockScraper)
+			if tce.setupMock != nil {
+				tce.setupMock(mockScraper)
 			}
 
 			server := server.NewGRPCServer(logger, mockScraper)
 
 			// ACT
-			resp, err := server.GetTaskTypes(ctx, tc.req)
+			resp, err := server.GetTaskTypes(ctx, tce.req)
 
 			// ASSERT
-			if tc.expectedErrCode == codes.OK {
+			if tce.expectedErrCode == codes.OK {
 				require.NoError(t, err)
 				require.NotNil(t, resp)
-				assert.Equal(t, tc.expectedResp.GetNewHash(), resp.GetNewHash())
-				assert.ElementsMatch(t, tc.expectedResp.GetTypes(), resp.GetTypes())
+				assert.Equal(t, tce.expectedResp.GetNewHash(), resp.GetNewHash())
+				assert.ElementsMatch(t, tce.expectedResp.GetTypes(), resp.GetTypes())
 			} else {
 				require.Error(t, err)
 				st, ok := status.FromError(err)
 				require.True(t, ok)
 				assert.Nil(t, resp)
-				assert.Equal(t, tc.expectedErrCode, st.Code())
+				assert.Equal(t, tce.expectedErrCode, st.Code())
 			}
 			mockScraper.AssertExpectations(t)
 		})

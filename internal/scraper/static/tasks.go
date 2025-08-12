@@ -55,7 +55,7 @@ func (s *Scraper) GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task
 	}
 
 	hash, err := calculateSortedHash(allTasks, func(i, j int) bool {
-		return allTasks[i].Id < allTasks[j].Id
+		return allTasks[i].GetId() < allTasks[j].GetId()
 	})
 	if err != nil {
 		return nil, "", err
@@ -134,14 +134,16 @@ func (s *Scraper) parseTasksFromBody(body io.Reader, isCompleted bool) ([]*pb.Ta
 		task.Id = int64(taskID)
 
 		createdAtStr := strings.TrimSpace(row.Find(selectors.createdAt).Contents().First().Text())
-		if t, createdErr := time.Parse("02.01.2006", createdAtStr); createdErr == nil {
-			task.CreationDate = timestamppb.New(t)
+		created, createdErr := time.Parse("02.01.2006", createdAtStr)
+		if createdErr == nil {
+			task.CreationDate = timestamppb.New(created)
 		}
 
 		if isCompleted && selectors.closedAt != "" {
 			closedAtStr := strings.TrimSpace(row.Find(selectors.closedAt).Contents().First().Text())
-			if t, closedErr := time.Parse("02.01.2006", closedAtStr); closedErr == nil {
-				task.ClosingDate = timestamppb.New(t)
+			closed, closedErr := time.Parse("02.01.2006", closedAtStr)
+			if closedErr == nil {
+				task.ClosingDate = timestamppb.New(closed)
 			}
 		}
 
@@ -149,9 +151,9 @@ func (s *Scraper) parseTasksFromBody(body io.Reader, isCompleted bool) ([]*pb.Ta
 		task.Address = strings.TrimSpace(row.Find(selectors.address).Text())
 		task.Type = strings.TrimSpace(row.Find(selectors.taskType + " b").First().Text())
 		task.Description = strings.TrimSpace(row.Find(selectors.description).Text())
-		if !utf8.ValidString(task.Description) {
+		if !utf8.ValidString(task.GetDescription()) {
 			task.Description = ""
-			s.log.Warn("Description contains invalid UTF-8 symbols, cleared.", "id", task.Id)
+			s.log.Warn("Description contains invalid UTF-8 symbols, cleared.", "id", task.GetId())
 		}
 
 		customerHTML, _ := row.Find(selectors.customer).Html()

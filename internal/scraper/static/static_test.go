@@ -108,21 +108,21 @@ func TestScraper_NewScraper(t *testing.T) {
 
 func TestScraper_GetDailyTasks(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		params := r.URL.Query()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		params := req.URL.Query()
 		if params.Get("core_section") == "task_list" {
 			if params.Get("task_state0_value") == "1" { // Active
-				w.Write([]byte(mockActiveTasksHTML))
+				writer.Write([]byte(mockActiveTasksHTML))
 				return
 			}
 			if params.Get("task_state0_value") == "2" { // Completed
-				w.Write([]byte(mockCompletedTasksHTML))
+				writer.Write([]byte(mockCompletedTasksHTML))
 				return
 			}
 		}
-		if r.Method == http.MethodPost {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(mockLoginSuccessPage))
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
 			return
 		}
 	})
@@ -147,8 +147,8 @@ func TestScraper_GetDailyTasks(t *testing.T) {
 		taskMap[task.GetId()] = task
 	}
 
-	activeTask, ok := taskMap[101]
-	assert.True(t, ok)
+	activeTask, exists := taskMap[101]
+	assert.True(t, exists)
 	assert.Equal(t, "Test User", activeTask.GetCustomerName())
 	assert.Equal(t, "testlogin", activeTask.GetCustomerLogin())
 	assert.False(t, activeTask.GetIsClosed())
@@ -164,23 +164,23 @@ func TestScraper_GetDailyTasks(t *testing.T) {
 
 func TestScraper_GetEmployees(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		params := r.URL.Query()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		params := req.URL.Query()
 		if params.Get("core_section") == "staff_unit" {
 			if params.Get("is_with_leaved") == "1" {
-				w.Write([]byte(mockDismissedStaffHTML))
+				writer.Write([]byte(mockDismissedStaffHTML))
 			} else {
-				w.Write([]byte(mockActiveStaffHTML))
+				writer.Write([]byte(mockActiveStaffHTML))
 			}
 			return
 		}
 		if params.Get("core_section") == "staff" && params.Get("action") == "division" {
-			w.Write([]byte(mockStaffShortnamesHTML))
+			writer.Write([]byte(mockStaffShortnamesHTML))
 			return
 		}
-		if r.Method == http.MethodPost {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(mockLoginSuccessPage))
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
 			return
 		}
 	})
@@ -209,28 +209,28 @@ func TestScraper_GetEmployees(t *testing.T) {
 		empMap[e.GetId()] = e
 	}
 
-	john, ok := empMap[10]
-	if !ok || john.GetFullname() != "John Doe" || john.GetShortname() != "John D." {
+	john, exists := empMap[10]
+	if !exists || john.GetFullname() != "John Doe" || john.GetShortname() != "John D." {
 		t.Errorf("failed to parse John Doe correctly: %+v", john)
 	}
 
-	jane, ok := empMap[20]
-	if !ok || jane.GetFullname() != "Jane Smith" || jane.GetShortname() != "Jane S." {
+	jane, exists := empMap[20]
+	if !exists || jane.GetFullname() != "Jane Smith" || jane.GetShortname() != "Jane S." {
 		t.Errorf("failed to parse Jane Smith correctly: %+v", jane)
 	}
 }
 
 func TestScraper_GetTaskTypes(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		params := r.URL.Query()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		params := req.URL.Query()
 		if params.Get("core_section") == "task" && params.Get("action") == "group_task_type_list" {
-			w.Write([]byte(mockTaskTypesHTML))
+			writer.Write([]byte(mockTaskTypesHTML))
 			return
 		}
-		if r.Method == http.MethodPost {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(mockLoginSuccessPage))
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
 			return
 		}
 	})
@@ -249,7 +249,7 @@ func TestScraper_GetTaskTypes(t *testing.T) {
 		t.Fatalf("GetTaskTypes failed: %v", err)
 	}
 
-	expectedTypes := []string{"Type 1", "Type 2", "Type 1", "Type 2", "Type 1", "Type 2"}
+	expectedTypes := []string{"Type 1", "Type 1", "Type 1", "Type 2", "Type 2", "Type 2"}
 	if !reflect.DeepEqual(taskTypes, expectedTypes) {
 		t.Errorf("expected task types %v, got %v", expectedTypes, taskTypes)
 	}

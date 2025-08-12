@@ -52,7 +52,9 @@ func NewScraper(cfg *config.Config, log *slog.Logger) (*Scraper, error) {
 		cfg:    cfg,
 		log:    log,
 	}
-	if err = scraper.retryLogin(context.Background()); err != nil {
+
+	err = scraper.retryLogin(context.Background())
+	if err != nil {
 		return nil, fmt.Errorf("failed to login after multiple retries: %w", err)
 	}
 

@@ -13,6 +13,7 @@ import (
 
 type Server struct {
 	pb.UnimplementedScraperServiceServer
+
 	scraper static.ScraperIface
 	log     *slog.Logger
 }

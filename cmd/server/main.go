@@ -61,7 +61,8 @@ func main() {
 
 	reflection.Register(serv)
 	go func() {
-		if err = serv.Serve(lis); err != nil {
+		err = serv.Serve(lis)
+		if err != nil {
 			log.Fatalf("failed to serve: %v", err)
 		}
 	}()
@@ -69,8 +70,6 @@ func main() {
 	defer serv.GracefulStop()
 
 	<-ctx.Done()
-	// employees, hash, err := staticScraper.GetEmployees(ctx)
-	// logger.InfoContext(ctx, "scraper.static.GetEmployees", "employees", employees, "hash", hash, "error", err)
 
 	defer stop()
 }
