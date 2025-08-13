@@ -2,46 +2,69 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/UnknownOlympus/hermes/internal/monitoring"
 	"github.com/UnknownOlympus/hermes/internal/scraper/static"
 	pb "github.com/UnknownOlympus/olympus-protos/gen/go/scraper/olympus"
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+const employeesCacheTTL = 10 * time.Minute
 
 type Server struct {
 	pb.UnimplementedScraperServiceServer
 
 	scraper static.ScraperIface
+	redis   *redis.Client
 	log     *slog.Logger
+	metrics *monitoring.Metrics
 }
 
-func NewGRPCServer(logger *slog.Logger, scraper static.ScraperIface) *Server {
-	return &Server{log: logger, scraper: scraper}
+func NewGRPCServer(
+	logger *slog.Logger,
+	redis *redis.Client,
+	scraper static.ScraperIface,
+	metrics *monitoring.Metrics,
+) *Server {
+	return &Server{log: logger, redis: redis, scraper: scraper, metrics: metrics}
 }
 
 func (s *Server) GetEmployees(ctx context.Context, req *pb.GetEmployeesRequest) (*pb.GetEmployeesResponse, error) {
 	log := s.log.With("op", "GetEmployees")
 	log.InfoContext(ctx, "Received request", "known_hash", req.GetKnownHash())
 
-	employees, currentHash, err := s.scraper.GetEmployees(ctx)
-	if err != nil {
-		log.ErrorContext(ctx, "Error getting employees from scraper", "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to get employee list")
+	fetchFn := func() (*pb.GetEmployeesResponse, error) {
+		employees, currentHash, err := s.scraper.GetEmployees(ctx)
+		if err != nil {
+			log.ErrorContext(ctx, "Error getting employees from scraper", "error", err)
+			s.metrics.ScrapeErrors.WithLabelValues("employees", "scraper_error").Inc()
+			return nil, status.Errorf(codes.Internal, "failed to get employee list")
+		}
+		return &pb.GetEmployeesResponse{
+			NewHash:   currentHash,
+			Employees: employees,
+		}, nil
 	}
 
-	if req.GetKnownHash() == currentHash {
+	newFn := func() *pb.GetEmployeesResponse { return &pb.GetEmployeesResponse{} }
+
+	response, err := getCachedOrFetch(ctx, s, "GetEmployees", "hermes:employees:all", employeesCacheTTL, fetchFn, newFn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to work with cache data: %w", err)
+	}
+
+	if req.GetKnownHash() == response.GetNewHash() {
 		log.InfoContext(ctx, "Hashes match. Returning empty employee list.")
-		return &pb.GetEmployeesResponse{NewHash: currentHash}, nil
+		return &pb.GetEmployeesResponse{NewHash: response.GetNewHash()}, nil
 	}
 
 	log.InfoContext(ctx, "Hashes do not match. Returning full employee list.")
-	return &pb.GetEmployeesResponse{
-		NewHash:   currentHash,
-		Employees: employees,
-	}, nil
+	return response, nil
 }
 
 func (s *Server) GetDailyTasks(ctx context.Context, req *pb.GetDailyTasksRequest) (*pb.GetDailyTasksResponse, error) {
@@ -84,19 +107,29 @@ func (s *Server) GetTaskTypes(ctx context.Context, req *pb.GetTaskTypesRequest) 
 	log := s.log.With("op", "GetTaskTypes")
 	log.InfoContext(ctx, "Received request", "known_hash", req.GetKnownHash())
 
-	taskTypes, currentHash, err := s.scraper.GetTaskTypes(ctx)
+	fetchFn := func() (*pb.GetTaskTypesResponse, error) {
+		taskTypes, currentHash, err := s.scraper.GetTaskTypes(ctx)
+		if err != nil {
+			s.metrics.ScrapeErrors.WithLabelValues("task_types", "scraper_error").Inc()
+			return nil, status.Errorf(codes.Internal, "failed to get task types")
+		}
+		return &pb.GetTaskTypesResponse{
+			NewHash: currentHash,
+			Types:   taskTypes,
+		}, nil
+	}
+
+	newFn := func() *pb.GetTaskTypesResponse { return &pb.GetTaskTypesResponse{} }
+
+	response, err := getCachedOrFetch(ctx, s, "GetTaskTypes", "hermes:task_types:all", 1*time.Hour, fetchFn, newFn)
 	if err != nil {
-		log.ErrorContext(ctx, "Error getting task types from scraper", "error", err)
-		return nil, status.Errorf(codes.Internal, "failed to get task types")
+		return nil, fmt.Errorf("failed to work with cache data: %w", err)
 	}
 
-	if req.GetKnownHash() == currentHash {
+	if req.GetKnownHash() == response.GetNewHash() {
 		s.log.InfoContext(ctx, "Hashes match. Returning empty task list.")
-		return &pb.GetTaskTypesResponse{NewHash: currentHash}, nil
+		return &pb.GetTaskTypesResponse{NewHash: response.GetNewHash()}, nil
 	}
 
-	return &pb.GetTaskTypesResponse{
-		Types:   taskTypes,
-		NewHash: currentHash,
-	}, nil
+	return response, nil
 }

@@ -13,6 +13,7 @@ type Config struct {
 	Password  string `json:"password"`
 	TargetURL string `json:"target_url"`
 	GrpcPort  string `json:"grpc_port"`
+	RedisAddr string `json:"redis_addr"`
 }
 
 func MustLoad() *Config {
@@ -25,5 +26,6 @@ func MustLoad() *Config {
 		Password:  os.Getenv("SCRAPER_PASSWORD"),
 		TargetURL: os.Getenv("SCRAPER_TARGET_URL"),
 		GrpcPort:  os.Getenv("GRPC_PORT"),
+		RedisAddr: os.Getenv("REDIS_ADDR"),
 	}
 }

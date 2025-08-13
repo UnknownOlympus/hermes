@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/UnknownOlympus/hermes/internal/config"
 	"github.com/UnknownOlympus/hermes/internal/monitoring"
 	"github.com/UnknownOlympus/hermes/internal/scraper/static"
 	"github.com/UnknownOlympus/hermes/internal/server"
+	"github.com/UnknownOlympus/hermes/pkg/redisclient"
 	pb "github.com/UnknownOlympus/olympus-protos/gen/go/scraper/olympus"
 	grpcprom "github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,9 +26,10 @@ import (
 )
 
 const (
-	envLocal = "local"
-	envDev   = "development"
-	envProd  = "production"
+	envLocal               = "local"
+	envDev                 = "development"
+	envProd                = "production"
+	redisConnectionTimeout = 5 * time.Second
 )
 
 func main() {
@@ -42,6 +45,13 @@ func main() {
 	logger := setupLogger(cfg.Env)
 
 	logger.InfoContext(ctx, "Hermes server is starting with configuration loaded successfully.")
+
+	// setup redis client.
+	redisClient, err := redisclient.NewClient(ctx, cfg.RedisAddr, redisConnectionTimeout)
+	if err != nil {
+		log.Fatalf("failed to connect to redis: %v", err)
+	}
+	logger.InfoContext(ctx, "Successfully connected to Redis.")
 
 	// Global registry.
 	promRegistry := prometheus.NewRegistry()
@@ -89,7 +99,7 @@ func main() {
 		log.Fatalf("Failed to create static client (http): %v", err)
 	}
 
-	pb.RegisterScraperServiceServer(serv, server.NewGRPCServer(logger, staticScraper))
+	pb.RegisterScraperServiceServer(serv, server.NewGRPCServer(logger, redisClient, staticScraper, customMetrics))
 	grpc_health_v1.RegisterHealthServer(serv, healthServer)
 	reflection.Register(serv)
 

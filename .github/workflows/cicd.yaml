@@ -2,8 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main"]
     tags: ["*"]
+  pull_request: [opened, reopened]
 
 jobs:
   lint:
