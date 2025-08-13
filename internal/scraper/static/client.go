@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/UnknownOlympus/hermes/internal/config"
+	"github.com/UnknownOlympus/hermes/internal/monitoring"
 	pb "github.com/UnknownOlympus/olympus-protos/gen/go/scraper/olympus"
 )
 
@@ -25,9 +26,10 @@ var (
 
 // Scraper combines client and parsing logic for static pages.
 type Scraper struct {
-	client *http.Client
-	cfg    *config.Config
-	log    *slog.Logger
+	client  *http.Client
+	cfg     *config.Config
+	log     *slog.Logger
+	metrics *monitoring.Metrics
 }
 
 type ScraperIface interface {
@@ -37,7 +39,7 @@ type ScraperIface interface {
 }
 
 // NewScraper creates a new client, configures it, and performs login.
-func NewScraper(cfg *config.Config, log *slog.Logger) (*Scraper, error) {
+func NewScraper(cfg *config.Config, log *slog.Logger, metrics *monitoring.Metrics) (*Scraper, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cookie jar: %w", err)
@@ -48,9 +50,10 @@ func NewScraper(cfg *config.Config, log *slog.Logger) (*Scraper, error) {
 	}
 
 	scraper := &Scraper{
-		client: client,
-		cfg:    cfg,
-		log:    log,
+		client:  client,
+		cfg:     cfg,
+		log:     log,
+		metrics: metrics,
 	}
 
 	err = scraper.retryLogin(context.Background())
@@ -73,6 +76,7 @@ func (s *Scraper) login(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.LoginURL, strings.NewReader(data.Encode()))
 	if err != nil {
+		s.metrics.ScrapeErrors.WithLabelValues("login", "create_request_failed").Inc()
 		return fmt.Errorf("failed to create login request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -83,14 +87,17 @@ func (s *Scraper) login(ctx context.Context) error {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		s.metrics.ScrapeErrors.WithLabelValues("login", "request_failed").Inc()
 		return fmt.Errorf("login request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		s.metrics.ScrapeErrors.WithLabelValues("login", "bad_status_code").Inc()
 		return fmt.Errorf("%w, status code: %d", ErrLogin, resp.StatusCode)
 	}
 	if strings.Contains(resp.Request.URL.String(), "login") {
+		s.metrics.ScrapeErrors.WithLabelValues("login", "invalid_credentials").Inc()
 		return ErrLogin
 	}
 	return nil
@@ -124,6 +131,7 @@ func (s *Scraper) retryLogin(ctx context.Context) error {
 func (s *Scraper) getHTMLResponse(ctx context.Context, data *url.Values) (*http.Response, error) {
 	reqURL, _ := url.Parse(s.cfg.TargetURL)
 	reqURL.RawQuery = data.Encode()
+	target := data.Get("core_section")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL.String(), nil)
 	if err != nil {
@@ -132,9 +140,11 @@ func (s *Scraper) getHTMLResponse(ctx context.Context, data *url.Values) (*http.
 
 	resp, err := s.client.Do(req)
 	if err != nil {
+		s.metrics.ScrapeErrors.WithLabelValues(target, "request_failed").Inc()
 		return nil, fmt.Errorf("failed to perform request: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		s.metrics.ScrapeErrors.WithLabelValues(target, "bad_status_code").Inc()
 		defer resp.Body.Close()
 		return nil, fmt.Errorf("%w, received status code: %d", ErrScrapeTask, resp.StatusCode)
 	}
@@ -156,8 +166,7 @@ func calculateSortedHash[T any](data []T, less func(i, j int) bool) (string, err
 }
 
 func parseIDFromHref(href string) (int, error) {
-	parts := strings.Split(href, "&")
-	for _, part := range parts {
+	for part := range strings.SplitSeq(href, "&") {
 		if strings.HasPrefix(part, "id=") {
 			var identifier int
 

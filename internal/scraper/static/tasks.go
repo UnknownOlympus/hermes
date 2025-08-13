@@ -29,6 +29,12 @@ type taskSelectors struct {
 }
 
 func (s *Scraper) GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task, string, error) {
+	startTime := time.Now()
+
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		s.metrics.ScrapeDuration.WithLabelValues("tasks").Observe(duration)
+	}()
 	type result struct {
 		tasks []*pb.Task
 		err   error
@@ -58,6 +64,7 @@ func (s *Scraper) GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task
 		return allTasks[i].GetId() < allTasks[j].GetId()
 	})
 	if err != nil {
+		s.metrics.ScrapeErrors.WithLabelValues("tasks", "hash_failed").Inc()
 		return nil, "", err
 	}
 
@@ -153,6 +160,7 @@ func (s *Scraper) parseTasksFromBody(body io.Reader, isCompleted bool) ([]*pb.Ta
 		task.Description = strings.TrimSpace(row.Find(selectors.description).Text())
 		if !utf8.ValidString(task.GetDescription()) {
 			task.Description = ""
+			s.metrics.ScrapeErrors.WithLabelValues("tasks", "description_invalid_utf8")
 			s.log.Warn("Description contains invalid UTF-8 symbols, cleared.", "id", task.GetId())
 		}
 
@@ -221,6 +229,13 @@ func ParseCustomerInfo(rawHTML string, log *slog.Logger) (string, string) {
 }
 
 func (s *Scraper) GetTaskTypes(ctx context.Context) ([]string, string, error) {
+	startTime := time.Now()
+
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		s.metrics.ScrapeDuration.WithLabelValues("task_types").Observe(duration)
+	}()
+
 	var allTaskTypes []string
 
 	const taskTypeGroupCount = 3
