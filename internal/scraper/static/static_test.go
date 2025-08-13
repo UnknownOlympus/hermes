@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/UnknownOlympus/hermes/internal/config"
+	"github.com/UnknownOlympus/hermes/internal/monitoring"
 	"github.com/UnknownOlympus/hermes/internal/scraper/static"
 	pb "github.com/UnknownOlympus/olympus-protos/gen/go/scraper/olympus"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -70,7 +72,9 @@ func TestScraper_NewScraper(t *testing.T) {
 
 		cfg := &config.Config{LoginURL: server.URL}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		scraper, err := static.NewScraper(cfg, logger)
+		testRegistry := prometheus.NewRegistry()
+		testMetrics := monitoring.NewMetrics(testRegistry)
+		scraper, err := static.NewScraper(cfg, logger, testMetrics)
 
 		require.NoError(t, err)
 		assert.NotNil(t, scraper)
@@ -99,7 +103,9 @@ func TestScraper_NewScraper(t *testing.T) {
 		_, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
 
-		scraper, err := static.NewScraper(cfg, logger)
+		testRegistry := prometheus.NewRegistry()
+		testMetrics := monitoring.NewMetrics(testRegistry)
+		scraper, err := static.NewScraper(cfg, logger, testMetrics)
 
 		require.Error(t, err)
 		assert.Nil(t, scraper)
@@ -132,7 +138,9 @@ func TestScraper_GetDailyTasks(t *testing.T) {
 
 	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	scraper, err := static.NewScraper(cfg, logger)
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
 	require.NoError(t, err)
 
 	tasks, _, err := scraper.GetDailyTasks(context.Background(), time.Now())
@@ -190,7 +198,9 @@ func TestScraper_GetEmployees(t *testing.T) {
 
 	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	scraper, err := static.NewScraper(cfg, logger)
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
 	if err != nil {
 		t.Fatalf("setup failed: could not create scraper: %v", err)
 	}
@@ -239,7 +249,9 @@ func TestScraper_GetTaskTypes(t *testing.T) {
 
 	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	scraper, err := static.NewScraper(cfg, logger)
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
 	if err != nil {
 		t.Fatalf("setup failed: could not create scraper: %v", err)
 	}

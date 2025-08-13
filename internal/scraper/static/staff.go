@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	pb "github.com/UnknownOlympus/olympus-protos/gen/go/scraper/olympus"
@@ -18,6 +19,13 @@ type staffShortname struct {
 
 // GetEmployees combines the logic for getting all employees.
 func (s *Scraper) GetEmployees(ctx context.Context) ([]*pb.Employee, string, error) {
+	startTime := time.Now()
+
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		s.metrics.ScrapeDuration.WithLabelValues("employees").Observe(duration)
+	}()
+
 	staff, err := s.parseStaffPage(ctx, false) // Actual
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to parse staff: %w", err)
@@ -40,6 +48,7 @@ func (s *Scraper) GetEmployees(ctx context.Context) ([]*pb.Employee, string, err
 		return fullStaff[i].GetId() < fullStaff[j].GetId()
 	})
 	if err != nil {
+		s.metrics.ScrapeErrors.WithLabelValues("employees", "hash_failed").Inc()
 		return nil, "", err
 	}
 
