@@ -18,4 +18,6 @@ FROM alpine:3
 EXPOSE 8080 50051
 
 COPY --from=builder main /bin/main
+COPY --from=ghcr.io/grpc-ecosystem/grpc-health-probe:v0.4.40 /ko-app/grpc-health-probe /bin/grpc_health_probe
+
 ENTRYPOINT [ "/bin/main" ]
