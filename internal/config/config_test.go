@@ -16,6 +16,7 @@ SCRAPER_USERNAME=admin
 SCRAPER_PASSWORD=adminpass
 SCRAPER_TARGET_URL=example.com
 GRPC_PORT=:50001
+REDIS_ADDR=redis://redis
 `
 	filet.File(t, ".env", envContent)
 	defer filet.CleanUp(t)
@@ -28,4 +29,5 @@ GRPC_PORT=:50001
 	assert.Equal(t, "adminpass", cfg.Password)
 	assert.Equal(t, "example.com", cfg.TargetURL)
 	assert.Equal(t, ":50001", cfg.GrpcPort)
+	assert.Equal(t, "redis://redis", cfg.RedisAddr)
 }
