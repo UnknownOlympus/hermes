@@ -211,7 +211,7 @@ func ParseCustomerInfo(rawHTML string, log *slog.Logger) (string, string) {
 	if customerLoginNode.Length() != 0 {
 		customerData := strings.TrimSpace(customerLoginNode.Text())
 
-		parts := strings.Split(customerData, "-")
+		parts := strings.Split(customerData, " - ")
 		if len(parts) == lenParts {
 			customerName = strings.TrimSpace(parts[0])
 			customerLogin = strings.TrimSpace(parts[1])
