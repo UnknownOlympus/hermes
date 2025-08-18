@@ -5,7 +5,6 @@ go 1.24.5
 require (
 	github.com/Flaque/filet v0.0.0-20201012163910-45f684403088
 	github.com/PuerkitoBio/goquery v1.10.3
-	github.com/UnknownOlympus/olympus-protos v0.2.0
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0
 	github.com/joho/godotenv v1.5.1
 	github.com/prometheus/client_golang v1.23.0
@@ -16,6 +15,7 @@ require (
 )
 
 require (
+	github.com/UnknownOlympus/olympus-protos v0.2.2 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
