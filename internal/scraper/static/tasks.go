@@ -2,12 +2,14 @@ package static
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -30,30 +32,41 @@ type taskSelectors struct {
 
 func (s *Scraper) GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task, string, error) {
 	startTime := time.Now()
-
 	defer func() {
 		duration := time.Since(startTime).Seconds()
 		s.metrics.ScrapeDuration.WithLabelValues("tasks").Observe(duration)
 	}()
+
+	taskGroupIDs := []string{"1", "2", "3"}
+	completionStates := []bool{true, false}
+
 	type result struct {
 		tasks []*pb.Task
 		err   error
 	}
-	goroutines := 2
-	channels := make(chan result, goroutines)
+
+	var wgr sync.WaitGroup
+	resultsChan := make(chan result)
+
+	for _, groupID := range taskGroupIDs {
+		for _, isCompleted := range completionStates {
+			wgr.Add(1)
+
+			go func(id string, completed bool) {
+				defer wgr.Done()
+				tasks, err := s.scrapeTasksByState(ctx, date, completed, id)
+				resultsChan <- result{tasks, err}
+			}(groupID, isCompleted)
+		}
+	}
 
 	go func() {
-		tasks, err := s.scrapeTasksByState(ctx, date, true)
-		channels <- result{tasks, err}
-	}()
-	go func() {
-		tasks, err := s.scrapeTasksByState(ctx, date, false)
-		channels <- result{tasks, err}
+		wgr.Wait()
+		close(resultsChan)
 	}()
 
 	var allTasks []*pb.Task
-	for range 2 {
-		res := <-channels
+	for res := range resultsChan {
 		if res.err != nil {
 			return nil, "", res.err
 		}
@@ -71,12 +84,17 @@ func (s *Scraper) GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task
 	return allTasks, hash, nil
 }
 
-func (s *Scraper) scrapeTasksByState(ctx context.Context, date time.Time, isCompleted bool) ([]*pb.Task, error) {
+func (s *Scraper) scrapeTasksByState(
+	ctx context.Context,
+	date time.Time,
+	isCompleted bool,
+	taskGroupID string,
+) ([]*pb.Task, error) {
 	formData := url.Values{
 		"core_section":       {"task_list"},
 		"filter_selector0":   {"task_state"},
 		"filter_selector1":   {"task_group"},
-		"task_group1_value":  {"3"},
+		"task_group1_value":  {taskGroupID},
 		"filter_selector2":   {"date_update"},
 		"date_update2":       {"3"},
 		"date_update2_date1": {date.Format("02.01.2006")},
@@ -90,7 +108,12 @@ func (s *Scraper) scrapeTasksByState(ctx context.Context, date time.Time, isComp
 
 	resp, err := s.getHTMLResponse(ctx, &formData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get html for tasks (completed=%t): %w", isCompleted, err)
+		return nil, fmt.Errorf(
+			"failed to get html for tasks (completed=%t, group=%s): %w",
+			isCompleted,
+			taskGroupID,
+			err,
+		)
 	}
 	defer resp.Body.Close()
 
@@ -155,17 +178,12 @@ func (s *Scraper) parseTasksFromBody(body io.Reader, isCompleted bool) ([]*pb.Ta
 		}
 
 		task.IsClosed = isCompleted
-		task.Address = strings.TrimSpace(row.Find(selectors.address).Text())
-		task.Type = strings.TrimSpace(row.Find(selectors.taskType + " b").First().Text())
-		task.Description = strings.TrimSpace(row.Find(selectors.description).Text())
-		if !utf8.ValidString(task.GetDescription()) {
-			task.Description = ""
-			s.metrics.ScrapeErrors.WithLabelValues("tasks", "description_invalid_utf8")
-			s.log.Warn("Description contains invalid UTF-8 symbols, cleared.", "id", task.GetId())
-		}
+		task.Address = s.sanitazeUTF8(strings.TrimSpace(row.Find(selectors.address).Text()), taskID)
+		task.Type = s.sanitazeUTF8(strings.TrimSpace(row.Find(selectors.taskType+" b").First().Text()), taskID)
+		task.Description = s.sanitazeUTF8(strings.TrimSpace(row.Find(selectors.description).Text()), taskID)
 
 		customerHTML, _ := row.Find(selectors.customer).Html()
-		task.CustomerName, task.CustomerLogin = ParseCustomerInfo(customerHTML, s.log)
+		task.Customers = ParseCustomerInfo(customerHTML, s.log)
 
 		executorsHTML, _ := row.Find(selectors.executors).Html()
 		task.Executors = ParseLinks(executorsHTML)
@@ -177,6 +195,14 @@ func (s *Scraper) parseTasksFromBody(body io.Reader, isCompleted bool) ([]*pb.Ta
 	})
 
 	return tasks, nil
+}
+
+func (s *Scraper) sanitazeUTF8(str string, taskID int) string {
+	if !utf8.ValidString(str) {
+		s.metrics.ScrapeErrors.WithLabelValues("tasks", "invalid_utf8")
+		s.log.Warn("Text contains invalid UTF-8 symbols, cleared.", "id", taskID)
+	}
+	return strings.ToValidUTF8(str, "")
 }
 
 func ParseLinks(rawHTML string) []string {
@@ -196,36 +222,72 @@ func ParseLinks(rawHTML string) []string {
 	return executors
 }
 
-func ParseCustomerInfo(rawHTML string, log *slog.Logger) (string, string) {
-	const lenParts = 2
-	var customerName string
-	var customerLogin string
-
+func ParseCustomerInfo(rawHTML string, log *slog.Logger) []*pb.Customer {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(rawHTML))
 	if err != nil {
 		log.Debug("failed to parse customer info", "error", err)
-		return "", ""
+		return nil
 	}
+
+	var customers []*pb.Customer
 
 	customerLoginNode := doc.Find("a")
 	if customerLoginNode.Length() != 0 {
-		customerData := strings.TrimSpace(customerLoginNode.Text())
+		customerLoginNode.Each(func(_ int, s *goquery.Selection) {
+			customer, selectionErr := parseCustomerFromSelection(s)
+			if selectionErr != nil {
+				log.Debug("failed to parse a customer link", "error", selectionErr)
+				return
+			}
 
-		parts := strings.Split(customerData, " - ")
-		if len(parts) == lenParts {
-			customerName = strings.TrimSpace(parts[0])
-			customerLogin = strings.TrimSpace(parts[1])
+			customers = append(customers, customer)
+		})
+	} else {
+		plainTextName := strings.TrimSpace(doc.Text())
 
-			return customerName, customerLogin
+		if plainTextName != "" {
+			customers = append(customers, &pb.Customer{
+				Id:    0,
+				Name:  plainTextName,
+				Login: "n/a",
+			})
 		}
 	}
 
-	customerName = strings.TrimSpace(doc.Text())
-	if customerName != "" {
-		return customerName, "n/a"
+	return customers
+}
+
+func parseCustomerFromSelection(sel *goquery.Selection) (*pb.Customer, error) {
+	href, exists := sel.Attr("href")
+	if !exists {
+		return nil, errors.New("href attribute not found")
 	}
 
-	return "", ""
+	idStr := ""
+	if idIndex := strings.LastIndex(href, "id="); idIndex != -1 {
+		idStr = href[idIndex+3:]
+	}
+
+	idx, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse customer ID from href '%s': %w", href, err)
+	}
+
+	customerData := strings.TrimSpace(sel.Text())
+	parts := strings.Split(customerData, " - ")
+	const partsLen = 2
+	if len(parts) != partsLen {
+		return nil, fmt.Errorf("customer text is not in 'Name - Login' format: %s", customerData)
+	}
+
+	name := strings.TrimSpace(parts[0])
+	login := strings.TrimSpace(parts[1])
+
+	return &pb.Customer{
+		Id:    idx,
+		Name:  name,
+		Login: login,
+	}, nil
 }
 
 func (s *Scraper) GetTaskTypes(ctx context.Context) ([]string, string, error) {

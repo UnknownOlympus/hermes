@@ -28,7 +28,7 @@ const mockActiveTasksHTML = `
 <table><tr tag="row_1">
 	<td></td><td></td><td></td><td></td>
 	<td><a href="#">Comment 1</a><br/><i>info</i></td> <td></td>
-	<td><a href="#">101</a></td> <td>01.08.2025 </td> <td>Some Address 1</td> <td><a> Test User - testlogin </a></td> <td></td>
+	<td><a href="#">101</a></td> <td>01.08.2025 </td> <td>Some Address 1</td> <td><a onmouseover="break_href = 1;" onmouseout="break_href = 0;" href="?core_section=customer&action=show&id=123" target="_blank">Test User - testLogin</a></td> <td></td>
 	<td><b>Task Type A</b><div class="div_journal_opis">Description A</div></td> <td>Executor A<br/>Executor B</td> </tr></table>`
 
 const mockCompletedTasksHTML = `
@@ -116,7 +116,7 @@ func TestScraper_GetDailyTasks(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
 		params := req.URL.Query()
-		if params.Get("core_section") == "task_list" {
+		if params.Get("core_section") == "task_list" && params.Get("task_group1_value") == "3" {
 			if params.Get("task_state0_value") == "1" { // Active
 				writer.Write([]byte(mockActiveTasksHTML))
 				return
@@ -157,15 +157,16 @@ func TestScraper_GetDailyTasks(t *testing.T) {
 
 	activeTask, exists := taskMap[101]
 	assert.True(t, exists)
-	assert.Equal(t, "Test User", activeTask.GetCustomerName())
-	assert.Equal(t, "testlogin", activeTask.GetCustomerLogin())
+	assert.NotNil(t, activeTask.GetCustomers())
+	assert.Equal(t, "Test User", activeTask.GetCustomers()[0].GetName())
+	assert.Equal(t, "testLogin", activeTask.GetCustomers()[0].GetLogin())
 	assert.False(t, activeTask.GetIsClosed())
 	assert.Equal(t, []string{"Executor A", "Executor B"}, activeTask.GetExecutors())
 
 	completedTask, ok := taskMap[202]
 	assert.True(t, ok)
-	assert.Equal(t, "Just a customer", completedTask.GetCustomerName())
-	assert.Equal(t, "n/a", completedTask.GetCustomerLogin())
+	assert.Equal(t, "Just a customer", completedTask.GetCustomers()[0].GetName())
+	assert.Equal(t, "n/a", completedTask.GetCustomers()[0].GetLogin())
 	assert.True(t, completedTask.GetIsClosed())
 	assert.NotNil(t, completedTask.GetClosingDate())
 }

@@ -148,6 +148,7 @@ func (s *Scraper) getHTMLResponse(ctx context.Context, data *url.Values) (*http.
 		defer resp.Body.Close()
 		return nil, fmt.Errorf("%w, received status code: %d", ErrScrapeTask, resp.StatusCode)
 	}
+
 	return resp, nil
 }
 
