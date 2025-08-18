@@ -10,6 +10,8 @@ github.com/UnknownOlympus/olympus-protos v0.2.1 h1:Da31xqbrvLxHFsHCpikxfdq3eTwqD
 github.com/UnknownOlympus/olympus-protos v0.2.1/go.mod h1:5GhsGXKMpeAz/duZ+dZoakO4CjxFt2ru9VVvuoPK2a4=
 github.com/UnknownOlympus/olympus-protos v0.2.2-0.20250816072407-eb461d5113c4 h1:bASw5g7rbQbTZeYsXHuaYtHh1xEldcwXnq8rgw533jE=
 github.com/UnknownOlympus/olympus-protos v0.2.2-0.20250816072407-eb461d5113c4/go.mod h1:5GhsGXKMpeAz/duZ+dZoakO4CjxFt2ru9VVvuoPK2a4=
+github.com/UnknownOlympus/olympus-protos v0.2.2 h1:WEPxvT/VhELtBqPNpg1Tyrh9nmO+hC6Ce8ko7Q5HbNQ=
+github.com/UnknownOlympus/olympus-protos v0.2.2/go.mod h1:5GhsGXKMpeAz/duZ+dZoakO4CjxFt2ru9VVvuoPK2a4=
 github.com/andybalholm/cascadia v1.3.3 h1:AG2YHrzJIm4BZ19iwJ/DAua6Btl3IwJX+VI4kktS1LM=
 github.com/andybalholm/cascadia v1.3.3/go.mod h1:xNd9bqTn98Ln4DwST8/nG+H0yuB8Hmgu1YHNnWw0GeA=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
