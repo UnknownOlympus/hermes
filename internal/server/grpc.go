@@ -15,6 +15,7 @@ import (
 )
 
 const employeesCacheTTL = 10 * time.Minute
+const agreementsCacheTTL = 6 * time.Hour
 
 type Server struct {
 	pb.UnimplementedScraperServiceServer
@@ -129,6 +130,49 @@ func (s *Server) GetTaskTypes(ctx context.Context, req *pb.GetTaskTypesRequest) 
 	if req.GetKnownHash() == response.GetNewHash() {
 		s.log.InfoContext(ctx, "Hashes match. Returning empty task list.")
 		return &pb.GetTaskTypesResponse{NewHash: response.GetNewHash()}, nil
+	}
+
+	return response, nil
+}
+
+func (s *Server) GetAgreements(ctx context.Context, req *pb.GetAgreementsRequest) (*pb.GetAgreementsResponse, error) {
+	log := s.log.With("op", "GetAgreements")
+	newFn := func() *pb.GetAgreementsResponse { return &pb.GetAgreementsResponse{} }
+
+	var cacheKey string
+	var fetchFn func() (*pb.GetAgreementsResponse, error)
+
+	switch {
+	case req.GetCustomerId() != 0:
+		log.InfoContext(ctx, "Received request with id", "identifier", req.GetCustomerId())
+		cacheKey = fmt.Sprintf("hermes:agreements:id:%d", req.GetCustomerId())
+		fetchFn = func() (*pb.GetAgreementsResponse, error) {
+			agreements, err := s.scraper.GetAgreementsByID(ctx, req.GetCustomerId())
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to get agreements by ID")
+			}
+			return &pb.GetAgreementsResponse{Agreements: agreements}, nil
+		}
+	case req.GetCustomerName() != "":
+		log.InfoContext(ctx, "Received request with name", "fullname", req.GetCustomerName())
+		cacheKey = fmt.Sprintf("hermes:agreements:name:%s", req.GetCustomerName())
+		fetchFn = func() (*pb.GetAgreementsResponse, error) {
+			agreements, err := s.scraper.GetAgreementsByName(ctx, req.GetCustomerName())
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to get agreements by name")
+			}
+			return &pb.GetAgreementsResponse{Agreements: agreements}, nil
+		}
+	default:
+		return nil, status.Errorf(
+			codes.InvalidArgument,
+			"received invalid argument, id must be integer type, name must be not empty string",
+		)
+	}
+
+	response, err := getCachedOrFetch(ctx, s, "GetAgreements", cacheKey, agreementsCacheTTL, fetchFn, newFn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to work with cache data: %w", err)
 	}
 
 	return response, nil

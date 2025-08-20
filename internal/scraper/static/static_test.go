@@ -3,15 +3,19 @@ package static_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/UnknownOlympus/hermes/internal/config"
 	"github.com/UnknownOlympus/hermes/internal/monitoring"
 	"github.com/UnknownOlympus/hermes/internal/scraper/static"
@@ -143,7 +147,7 @@ func TestScraper_GetDailyTasks(t *testing.T) {
 	scraper, err := static.NewScraper(cfg, logger, testMetrics)
 	require.NoError(t, err)
 
-	tasks, _, err := scraper.GetDailyTasks(context.Background(), time.Now())
+	tasks, _, err := scraper.GetDailyTasks(t.Context(), time.Now())
 	require.NoError(t, err)
 
 	if len(tasks) != 2 {
@@ -206,7 +210,7 @@ func TestScraper_GetEmployees(t *testing.T) {
 		t.Fatalf("setup failed: could not create scraper: %v", err)
 	}
 
-	employees, _, err := scraper.GetEmployees(context.Background())
+	employees, _, err := scraper.GetEmployees(t.Context())
 	if err != nil {
 		t.Fatalf("GetEmployees failed: %v", err)
 	}
@@ -257,7 +261,7 @@ func TestScraper_GetTaskTypes(t *testing.T) {
 		t.Fatalf("setup failed: could not create scraper: %v", err)
 	}
 
-	taskTypes, _, err := scraper.GetTaskTypes(context.Background())
+	taskTypes, _, err := scraper.GetTaskTypes(t.Context())
 	if err != nil {
 		t.Fatalf("GetTaskTypes failed: %v", err)
 	}
@@ -265,5 +269,291 @@ func TestScraper_GetTaskTypes(t *testing.T) {
 	expectedTypes := []string{"Type 1", "Type 1", "Type 1", "Type 2", "Type 2", "Type 2"}
 	if !reflect.DeepEqual(taskTypes, expectedTypes) {
 		t.Errorf("expected task types %v, got %v", expectedTypes, taskTypes)
+	}
+}
+
+const mockAgreementsHTML = `
+<table><tr tag="row_1">
+	<td></td>
+	<td><input type="checkbox" name="object_ids[]" value="48111""></td>
+	<td><a>Canada, test street </a><br>555-555-55-55</td>
+	<td>192.168.0.1</td>
+	<td>#0825-1245<br>2025-08-19</td>
+	<td>John Doe</td>
+	<td>19.08.2025</td>
+	<td></td>
+	<td>290.00</td>
+	<td>200M - PON - 30 - 30$</td>
+	<td>-</td></tr></table>`
+
+func TestGetAgreementsByID_success(t *testing.T) {
+	// init mock server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		params := req.URL.Query()
+		if params.Get("core_section") == "customer_list" {
+			writer.Write([]byte(mockAgreementsHTML))
+			return
+		}
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
+			return
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// init scraper and deps
+	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
+	require.NoError(t, err)
+
+	agreements, err := scraper.GetAgreementsByID(t.Context(), 48111)
+
+	require.NoError(t, err)
+	actualAgreement := agreements[0]
+	assert.Equal(t, int64(48111), actualAgreement.GetId())
+	assert.Equal(t, "Canada, test street", actualAgreement.GetAddress())
+	assert.Equal(t, "555-555-55-55", actualAgreement.GetNumber())
+	assert.Equal(t, "192.168.0.1", actualAgreement.GetIp())
+	assert.Equal(t, "#0825-1245", actualAgreement.GetContract())
+	assert.Equal(t, "John Doe", actualAgreement.GetName())
+	assert.Equal(t, "290.00", actualAgreement.GetBalance())
+	assert.Equal(t, "200M - PON - 30", actualAgreement.GetTariff())
+}
+
+func TestGetAgreementsByID_formDataError(t *testing.T) {
+	// init mock server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
+			return
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// init scraper and deps
+	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
+	require.NoError(t, err)
+
+	_, err = scraper.GetAgreementsByID(t.Context(), 0)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, static.ErrNoParameters)
+}
+
+func TestGetAgreementsByID_scrapeError(t *testing.T) {
+	// init mock server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		params := req.URL.Query()
+		if params.Get("core_section") == "customer_list" {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
+			return
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// init scraper and deps
+	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
+	require.NoError(t, err)
+
+	_, err = scraper.GetAgreementsByID(t.Context(), 48111)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed to scrape agreements data")
+}
+
+func TestGetAgreementsByName(t *testing.T) {
+	// init mock server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		params := req.URL.Query()
+		if params.Get("core_section") == "customer_list" {
+			writer.Write([]byte(mockAgreementsHTML))
+			return
+		}
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
+			return
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// init scraper and deps
+	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
+	require.NoError(t, err)
+
+	agreements, err := scraper.GetAgreementsByName(t.Context(), "John Doe")
+
+	require.NoError(t, err)
+	actualAgreement := agreements[0]
+	assert.Equal(t, int64(48111), actualAgreement.GetId())
+	assert.Equal(t, "Canada, test street", actualAgreement.GetAddress())
+	assert.Equal(t, "555-555-55-55", actualAgreement.GetNumber())
+	assert.Equal(t, "192.168.0.1", actualAgreement.GetIp())
+	assert.Equal(t, "#0825-1245", actualAgreement.GetContract())
+	assert.Equal(t, "John Doe", actualAgreement.GetName())
+	assert.Equal(t, "290.00", actualAgreement.GetBalance())
+	assert.Equal(t, "200M - PON - 30", actualAgreement.GetTariff())
+}
+
+func TestGetAgreementsByName_formDataError(t *testing.T) {
+	// init mock server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
+			return
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// init scraper and deps
+	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
+	require.NoError(t, err)
+
+	_, err = scraper.GetAgreementsByName(t.Context(), "")
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, static.ErrNoParameters)
+}
+
+func TestGetAgreementsByName_scrapeError(t *testing.T) {
+	// init mock server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		params := req.URL.Query()
+		if params.Get("core_section") == "customer_list" {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
+			return
+		}
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	// init scraper and deps
+	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	testRegistry := prometheus.NewRegistry()
+	testMetrics := monitoring.NewMetrics(testRegistry)
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
+	require.NoError(t, err)
+
+	_, err = scraper.GetAgreementsByName(t.Context(), "John Doe")
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed to scrape agreements data")
+}
+
+func TestParseIDFromRow(t *testing.T) {
+	testCases := []struct {
+		name        string
+		html        string
+		expectedID  int64
+		expectedErr error
+	}{
+		{
+			name:        "Success",
+			html:        `<table><tr><td><input type="checkbox" name="id" value="12345"></td></tr></table>`,
+			expectedID:  12345,
+			expectedErr: nil,
+		},
+		{
+			name:        "Checkbox not found",
+			html:        `<table><tr><td>Just text, without checkbox</td></tr></table>`,
+			expectedID:  0,
+			expectedErr: static.ErrBoxNotFound,
+		},
+		{
+			name:        "Attribute value is not exists",
+			html:        `<table><tr><td><input type="checkbox" name="id"></td></tr></table>`,
+			expectedID:  0,
+			expectedErr: static.ErrEmptyValue,
+		},
+		{
+			name:        "Attribute value is empty",
+			html:        `<table><tr><td><input type="checkbox" name="id" value=""></td></tr></table>`,
+			expectedID:  0,
+			expectedErr: static.ErrEmptyValue,
+		},
+		{
+			name:        "Value is not an integer",
+			html:        `<table><tr><td><input type="checkbox" name="id" value="not-a-number"></td></tr></table>`,
+			expectedID:  0,
+			expectedErr: &strconv.NumError{},
+		},
+		{
+			name:        "Too big integer",
+			html:        `<table><tr><td><input type="checkbox" name="id" value="9223372036854775808"></td></tr></table>`,
+			expectedID:  0,
+			expectedErr: &strconv.NumError{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := goquery.NewDocumentFromReader(strings.NewReader(tc.html))
+			require.NoError(t, err)
+
+			rowSelection := doc.Find(`tr`)
+
+			id, err := static.ParseIDFromRow(rowSelection)
+
+			assert.Equal(t, tc.expectedID, id)
+
+			if tc.expectedErr == nil && err != nil {
+				t.Errorf("expected no error, but got: %v", err)
+			} else if tc.expectedErr != nil {
+				if errors.Is(tc.expectedErr, static.ErrBoxNotFound) || errors.Is(tc.expectedErr, static.ErrEmptyValue) {
+					if !errors.Is(err, tc.expectedErr) {
+						t.Errorf("expected error %v, but got %v", tc.expectedErr, err)
+					}
+				} else if _, ok := tc.expectedErr.(*strconv.NumError); ok {
+					var numErr *strconv.NumError
+					if !errors.As(err, &numErr) {
+						t.Errorf("expected an error of type strconv.NumError, but got %T", err)
+					}
+				}
+			}
+		})
 	}
 }
