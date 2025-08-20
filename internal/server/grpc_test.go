@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -338,6 +339,250 @@ func TestGetTaskTypes(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		assert.Equal(t, codes.Internal, st.Code())
+		mockScraper.AssertExpectations(t)
+		require.NoError(t, mockRedis.ExpectationsWereMet())
+	})
+}
+
+func TestGetAgreements(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx := context.Background()
+	testMetrics := monitoring.NewMetrics(prometheus.NewRegistry())
+	testAgreement := pb.Agreement{
+		Id:       1,
+		Ip:       "192.168.0.1",
+		Name:     "John Doe",
+		Contract: "#12345",
+		Balance:  "100",
+		Tariff:   "optimal",
+		Address:  "Canada",
+		Number:   "555-555-55-55",
+	}
+
+	// --- Test Case 1: Cache Hit ---
+	t.Run("Success - Cache HIT, request by ID", func(t *testing.T) {
+		// ARRANGE
+		mockScraper := mocks.NewScraperIface(t)
+		dtb, mockRedis := redismock.NewClientMock()
+
+		cachedResp := &pb.GetAgreementsResponse{
+			Agreements: []*pb.Agreement{&testAgreement},
+		}
+		cachedtbytes, err := proto.Marshal(cachedResp)
+		require.NoError(t, err)
+		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:id:%d", testAgreement.GetId())).SetVal(string(cachedtbytes))
+
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		// ACT
+		req := &pb.GetAgreementsRequest{
+			Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()},
+		}
+		resp, err := srv.GetAgreements(ctx, req)
+
+		// ASSERT
+		require.NoError(t, err)
+		actualAgreement := resp.GetAgreements()[0]
+		assert.Equal(t, testAgreement.GetId(), actualAgreement.GetId())
+		assert.Equal(t, testAgreement.GetIp(), actualAgreement.GetIp())
+		assert.Equal(t, testAgreement.GetName(), actualAgreement.GetName())
+		assert.Equal(t, testAgreement.GetContract(), actualAgreement.GetContract())
+		assert.Equal(t, testAgreement.GetBalance(), actualAgreement.GetBalance())
+		assert.Equal(t, testAgreement.GetAddress(), actualAgreement.GetAddress())
+		assert.Equal(t, testAgreement.GetNumber(), actualAgreement.GetNumber())
+		mockScraper.AssertNotCalled(t, "GetAgreementsByID")
+		require.NoError(t, mockRedis.ExpectationsWereMet())
+	})
+
+	// --- Test Case 2: Cache Hit, request by name ---
+	t.Run("Success - Cache HIT, request by name", func(t *testing.T) {
+		// ARRANGE
+		mockScraper := mocks.NewScraperIface(t)
+		dtb, mockRedis := redismock.NewClientMock()
+
+		cachedResp := &pb.GetAgreementsResponse{
+			Agreements: []*pb.Agreement{&testAgreement},
+		}
+		cachedtbytes, err := proto.Marshal(cachedResp)
+		require.NoError(t, err)
+		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName())).
+			SetVal(string(cachedtbytes))
+
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		// ACT
+		req := &pb.GetAgreementsRequest{
+			Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()},
+		}
+		resp, err := srv.GetAgreements(ctx, req)
+
+		// ASSERT
+		require.NoError(t, err)
+		actualAgreement := resp.GetAgreements()[0]
+		assert.Equal(t, testAgreement.GetId(), actualAgreement.GetId())
+		assert.Equal(t, testAgreement.GetIp(), actualAgreement.GetIp())
+		assert.Equal(t, testAgreement.GetName(), actualAgreement.GetName())
+		assert.Equal(t, testAgreement.GetContract(), actualAgreement.GetContract())
+		assert.Equal(t, testAgreement.GetBalance(), actualAgreement.GetBalance())
+		assert.Equal(t, testAgreement.GetAddress(), actualAgreement.GetAddress())
+		assert.Equal(t, testAgreement.GetNumber(), actualAgreement.GetNumber())
+		mockScraper.AssertNotCalled(t, "GetAgreementsByName")
+		require.NoError(t, mockRedis.ExpectationsWereMet())
+	})
+
+	// --- Test Case 3: Cache Miss, successful scrape ---
+	t.Run("Success - Cache MISS, successful scrape for ID", func(t *testing.T) {
+		// ARRANGE
+		mockScraper := mocks.NewScraperIface(t)
+		dtb, mockRedis := redismock.NewClientMock()
+
+		freshResp := &pb.GetAgreementsResponse{
+			Agreements: []*pb.Agreement{&testAgreement},
+		}
+		freshBytes, _ := proto.Marshal(freshResp)
+
+		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:id:%d", testAgreement.GetId())).SetErr(redis.Nil)
+		mockScraper.On("GetAgreementsByID", ctx, testAgreement.GetId()).Return(freshResp.GetAgreements(), nil).Once()
+		mockRedis.ExpectSet(fmt.Sprintf("hermes:agreements:id:%d", testAgreement.GetId()), freshBytes, 6*time.Hour).
+			SetVal("OK")
+
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		// ACT
+		req := &pb.GetAgreementsRequest{
+			Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()},
+		}
+		resp, err := srv.GetAgreements(ctx, req)
+
+		// ASSERT
+		require.NoError(t, err)
+		actualAgreement := resp.GetAgreements()[0]
+		assert.Equal(t, testAgreement.GetId(), actualAgreement.GetId())
+		assert.Equal(t, testAgreement.GetIp(), actualAgreement.GetIp())
+		assert.Equal(t, testAgreement.GetName(), actualAgreement.GetName())
+		assert.Equal(t, testAgreement.GetContract(), actualAgreement.GetContract())
+		assert.Equal(t, testAgreement.GetBalance(), actualAgreement.GetBalance())
+		assert.Equal(t, testAgreement.GetAddress(), actualAgreement.GetAddress())
+		assert.Equal(t, testAgreement.GetNumber(), actualAgreement.GetNumber())
+		mockScraper.AssertExpectations(t)
+		require.NoError(t, mockRedis.ExpectationsWereMet())
+	})
+
+	t.Run("Success - Cache MISS, successful scrape for name", func(t *testing.T) {
+		// ARRANGE
+		mockScraper := mocks.NewScraperIface(t)
+		dtb, mockRedis := redismock.NewClientMock()
+
+		freshResp := &pb.GetAgreementsResponse{
+			Agreements: []*pb.Agreement{&testAgreement},
+		}
+		freshBytes, _ := proto.Marshal(freshResp)
+
+		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName())).SetErr(redis.Nil)
+		mockScraper.On("GetAgreementsByName", ctx, testAgreement.GetName()).
+			Return(freshResp.GetAgreements(), nil).
+			Once()
+		mockRedis.ExpectSet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName()), freshBytes, 6*time.Hour).
+			SetVal("OK")
+
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		// ACT
+		req := &pb.GetAgreementsRequest{
+			Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()},
+		}
+		resp, err := srv.GetAgreements(ctx, req)
+
+		// ASSERT
+		require.NoError(t, err)
+		actualAgreement := resp.GetAgreements()[0]
+		assert.Equal(t, testAgreement.GetId(), actualAgreement.GetId())
+		assert.Equal(t, testAgreement.GetIp(), actualAgreement.GetIp())
+		assert.Equal(t, testAgreement.GetName(), actualAgreement.GetName())
+		assert.Equal(t, testAgreement.GetContract(), actualAgreement.GetContract())
+		assert.Equal(t, testAgreement.GetBalance(), actualAgreement.GetBalance())
+		assert.Equal(t, testAgreement.GetAddress(), actualAgreement.GetAddress())
+		assert.Equal(t, testAgreement.GetNumber(), actualAgreement.GetNumber())
+		mockScraper.AssertExpectations(t)
+		require.NoError(t, mockRedis.ExpectationsWereMet())
+	})
+
+	// --- Test Case 4: Cache Miss, scraper fails for ID ---
+	t.Run("Failure - Cache MISS, scraper fails for ID", func(t *testing.T) {
+		// ARRANGE
+		mockScraper := mocks.NewScraperIface(t)
+		dtb, mockRedis := redismock.NewClientMock()
+
+		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:id:%d", testAgreement.GetId())).SetErr(redis.Nil)
+		mockScraper.On("GetAgreementsByID", ctx, testAgreement.GetId()).
+			Return(nil, errors.New("internal scraper error")).
+			Once()
+
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		// ACT
+		_, err := srv.GetAgreements(
+			ctx,
+			&pb.GetAgreementsRequest{
+				Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()},
+			},
+		)
+
+		// ASSERT
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.Internal, st.Code())
+		mockScraper.AssertExpectations(t)
+		require.NoError(t, mockRedis.ExpectationsWereMet())
+	})
+
+	// --- Test Case 5: Cache Miss, scraper fails for name ---
+	t.Run("Failure - Cache MISS, scraper fails for name", func(t *testing.T) {
+		// ARRANGE
+		mockScraper := mocks.NewScraperIface(t)
+		dtb, mockRedis := redismock.NewClientMock()
+
+		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName())).SetErr(redis.Nil)
+		mockScraper.On("GetAgreementsByName", ctx, testAgreement.GetName()).
+			Return(nil, errors.New("internal scraper error")).
+			Once()
+
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		// ACT
+		_, err := srv.GetAgreements(
+			ctx,
+			&pb.GetAgreementsRequest{
+				Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()},
+			},
+		)
+
+		// ASSERT
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.Internal, st.Code())
+		mockScraper.AssertExpectations(t)
+		require.NoError(t, mockRedis.ExpectationsWereMet())
+	})
+
+	// --- Test Case 6: invalid argument ---
+	t.Run("Failure - Cache MISS, scraper fails for name", func(t *testing.T) {
+		// ARRANGE
+		mockScraper := mocks.NewScraperIface(t)
+		dtb, mockRedis := redismock.NewClientMock()
+
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		// ACT
+		_, err := srv.GetAgreements(ctx, &pb.GetAgreementsRequest{})
+
+		// ASSERT
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.InvalidArgument, st.Code())
 		mockScraper.AssertExpectations(t)
 		require.NoError(t, mockRedis.ExpectationsWereMet())
 	})

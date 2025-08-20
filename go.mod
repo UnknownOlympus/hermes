@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	github.com/UnknownOlympus/olympus-protos v0.2.2 // indirect
+	github.com/UnknownOlympus/olympus-protos v0.3.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

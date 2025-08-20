@@ -36,6 +36,8 @@ type ScraperIface interface {
 	GetEmployees(ctx context.Context) ([]*pb.Employee, string, error)
 	GetTaskTypes(ctx context.Context) ([]string, string, error)
 	GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task, string, error)
+	GetAgreementsByID(ctx context.Context, id int64) ([]*pb.Agreement, error)
+	GetAgreementsByName(ctx context.Context, name string) ([]*pb.Agreement, error)
 }
 
 // NewScraper creates a new client, configures it, and performs login.
