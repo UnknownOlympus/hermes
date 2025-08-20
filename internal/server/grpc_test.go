@@ -375,7 +375,9 @@ func TestGetAgreements(t *testing.T) {
 		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
 
 		// ACT
-		req := &pb.GetAgreementsRequest{Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()}}
+		req := &pb.GetAgreementsRequest{
+			Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()},
+		}
 		resp, err := srv.GetAgreements(ctx, req)
 
 		// ASSERT
@@ -403,12 +405,15 @@ func TestGetAgreements(t *testing.T) {
 		}
 		cachedtbytes, err := proto.Marshal(cachedResp)
 		require.NoError(t, err)
-		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName())).SetVal(string(cachedtbytes))
+		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName())).
+			SetVal(string(cachedtbytes))
 
 		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
 
 		// ACT
-		req := &pb.GetAgreementsRequest{Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()}}
+		req := &pb.GetAgreementsRequest{
+			Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()},
+		}
 		resp, err := srv.GetAgreements(ctx, req)
 
 		// ASSERT
@@ -438,12 +443,15 @@ func TestGetAgreements(t *testing.T) {
 
 		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:id:%d", testAgreement.GetId())).SetErr(redis.Nil)
 		mockScraper.On("GetAgreementsByID", ctx, testAgreement.GetId()).Return(freshResp.GetAgreements(), nil).Once()
-		mockRedis.ExpectSet(fmt.Sprintf("hermes:agreements:id:%d", testAgreement.GetId()), freshBytes, 6*time.Hour).SetVal("OK")
+		mockRedis.ExpectSet(fmt.Sprintf("hermes:agreements:id:%d", testAgreement.GetId()), freshBytes, 6*time.Hour).
+			SetVal("OK")
 
 		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
 
 		// ACT
-		req := &pb.GetAgreementsRequest{Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()}}
+		req := &pb.GetAgreementsRequest{
+			Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()},
+		}
 		resp, err := srv.GetAgreements(ctx, req)
 
 		// ASSERT
@@ -471,13 +479,18 @@ func TestGetAgreements(t *testing.T) {
 		freshBytes, _ := proto.Marshal(freshResp)
 
 		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName())).SetErr(redis.Nil)
-		mockScraper.On("GetAgreementsByName", ctx, testAgreement.GetName()).Return(freshResp.GetAgreements(), nil).Once()
-		mockRedis.ExpectSet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName()), freshBytes, 6*time.Hour).SetVal("OK")
+		mockScraper.On("GetAgreementsByName", ctx, testAgreement.GetName()).
+			Return(freshResp.GetAgreements(), nil).
+			Once()
+		mockRedis.ExpectSet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName()), freshBytes, 6*time.Hour).
+			SetVal("OK")
 
 		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
 
 		// ACT
-		req := &pb.GetAgreementsRequest{Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()}}
+		req := &pb.GetAgreementsRequest{
+			Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()},
+		}
 		resp, err := srv.GetAgreements(ctx, req)
 
 		// ASSERT
@@ -501,12 +514,19 @@ func TestGetAgreements(t *testing.T) {
 		dtb, mockRedis := redismock.NewClientMock()
 
 		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:id:%d", testAgreement.GetId())).SetErr(redis.Nil)
-		mockScraper.On("GetAgreementsByID", ctx, testAgreement.GetId()).Return(nil, errors.New("internal scraper error")).Once()
+		mockScraper.On("GetAgreementsByID", ctx, testAgreement.GetId()).
+			Return(nil, errors.New("internal scraper error")).
+			Once()
 
 		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
 
 		// ACT
-		_, err := srv.GetAgreements(ctx, &pb.GetAgreementsRequest{Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()}})
+		_, err := srv.GetAgreements(
+			ctx,
+			&pb.GetAgreementsRequest{
+				Identifier: &pb.GetAgreementsRequest_CustomerId{CustomerId: testAgreement.GetId()},
+			},
+		)
 
 		// ASSERT
 		require.Error(t, err)
@@ -524,12 +544,19 @@ func TestGetAgreements(t *testing.T) {
 		dtb, mockRedis := redismock.NewClientMock()
 
 		mockRedis.ExpectGet(fmt.Sprintf("hermes:agreements:name:%s", testAgreement.GetName())).SetErr(redis.Nil)
-		mockScraper.On("GetAgreementsByName", ctx, testAgreement.GetName()).Return(nil, errors.New("internal scraper error")).Once()
+		mockScraper.On("GetAgreementsByName", ctx, testAgreement.GetName()).
+			Return(nil, errors.New("internal scraper error")).
+			Once()
 
 		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
 
 		// ACT
-		_, err := srv.GetAgreements(ctx, &pb.GetAgreementsRequest{Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()}})
+		_, err := srv.GetAgreements(
+			ctx,
+			&pb.GetAgreementsRequest{
+				Identifier: &pb.GetAgreementsRequest_CustomerName{CustomerName: testAgreement.GetName()},
+			},
+		)
 
 		// ASSERT
 		require.Error(t, err)

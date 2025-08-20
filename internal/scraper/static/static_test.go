@@ -529,30 +529,33 @@ func TestParseIDFromRow(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			doc, err := goquery.NewDocumentFromReader(strings.NewReader(tc.html))
+	for _, tce := range testCases {
+		t.Run(tce.name, func(t *testing.T) {
+			doc, err := goquery.NewDocumentFromReader(strings.NewReader(tce.html))
 			require.NoError(t, err)
 
 			rowSelection := doc.Find(`tr`)
 
 			id, err := static.ParseIDFromRow(rowSelection)
 
-			assert.Equal(t, tc.expectedID, id)
+			assert.Equal(t, tce.expectedID, id)
 
-			if tc.expectedErr == nil && err != nil {
-				t.Errorf("expected no error, but got: %v", err)
-			} else if tc.expectedErr != nil {
-				if errors.Is(tc.expectedErr, static.ErrBoxNotFound) || errors.Is(tc.expectedErr, static.ErrEmptyValue) {
-					if !errors.Is(err, tc.expectedErr) {
-						t.Errorf("expected error %v, but got %v", tc.expectedErr, err)
-					}
-				} else if _, ok := tc.expectedErr.(*strconv.NumError); ok {
-					var numErr *strconv.NumError
-					if !errors.As(err, &numErr) {
-						t.Errorf("expected an error of type strconv.NumError, but got %T", err)
-					}
+			if tce.expectedErr == nil {
+				if err != nil {
+					t.Errorf("expected no error, but got: %v", err)
 				}
+				return
+			}
+			if err == nil {
+				t.Errorf("expected error '%v', but got nil", tce.expectedErr)
+				return
+			}
+
+			var numErr *strconv.NumError
+			if errors.As(err, &numErr) {
+				return
+			} else if !errors.Is(err, tce.expectedErr) {
+				t.Errorf("expected error %v, but got %v", tce.expectedErr, err)
 			}
 		})
 	}
