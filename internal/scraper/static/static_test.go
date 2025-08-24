@@ -560,3 +560,117 @@ func TestParseIDFromRow(t *testing.T) {
 		})
 	}
 }
+
+func TestAddComment(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	testMetrics := monitoring.NewMetrics(prometheus.NewRegistry())
+	ctx := context.Background()
+
+	t.Run("success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+			switch req.URL.Path {
+			case "/login":
+				assert.Equal(t, http.MethodPost, req.Method)
+				http.Redirect(writer, req, "/dashboard", http.StatusFound)
+
+			case "/dashboard":
+				writer.WriteHeader(http.StatusOK)
+
+			case "/add-comment":
+				assert.Equal(t, http.MethodPost, req.Method)
+				req.ParseForm()
+				assert.Equal(t, "78357", req.FormValue("id"))
+				assert.Equal(t, "hello world", req.FormValue("opis"))
+				writer.WriteHeader(http.StatusOK)
+
+			default:
+				t.Fatalf("Received unexpected request to path: %s", req.URL.Path)
+			}
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{
+			LoginURL:  server.URL + "/login",
+			TargetURL: server.URL + "/add-comment",
+		}
+		scraper, err := static.NewScraper(cfg, logger, testMetrics)
+		require.NoError(t, err)
+
+		// ACT
+		err = scraper.AddComment(ctx, 78357, "hello world")
+
+		// ASSERT
+		require.NoError(t, err)
+	})
+
+	t.Run("server returns error on comment post", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/login":
+				assert.Equal(t, http.MethodPost, r.Method)
+				http.Redirect(writer, r, "/dashboard", http.StatusFound)
+
+			case "/dashboard":
+				writer.WriteHeader(http.StatusOK)
+
+			default:
+				writer.WriteHeader(http.StatusInternalServerError)
+			}
+		}))
+		defer server.Close()
+
+		cfg := &config.Config{LoginURL: server.URL + "/login", TargetURL: server.URL}
+		scraper, err := static.NewScraper(cfg, logger, testMetrics)
+		require.NoError(t, err)
+
+		err = scraper.AddComment(ctx, 123, "any comment")
+
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed with status: 500")
+	})
+}
+
+func TestGetCommentsFromTask(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	testMetrics := monitoring.NewMetrics(prometheus.NewRegistry())
+	ctx := context.Background()
+
+	mockHTML := `
+	<html><body>
+		<div id="comment2_48500_id" class="j_card_comment_div">
+			<span id="comment_48500_id">first comment</span>
+			<div style="font-weight: bold;">John Doe</div>
+			<div style="float: right;">23.08.2025 14:25</div>
+		</div>
+		<div id="comment2_48501_id" class="j_card_comment_div">
+			<span id="comment_48501_id">second comment</span>
+			<div style="font-weight: bold;">Jane Doe</div>
+			<div style="float: right;">23.08.2025 14:27</div>
+		</div>
+	</body></html>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		if req.Method == http.MethodPost {
+			writer.WriteHeader(http.StatusOK)
+			writer.Write([]byte(mockLoginSuccessPage))
+			return
+		}
+
+		assert.Equal(t, "show", req.URL.Query().Get("action"))
+		assert.Equal(t, "78357", req.URL.Query().Get("id"))
+		writer.WriteHeader(http.StatusOK)
+		fmt.Fprint(writer, mockHTML)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{LoginURL: server.URL, TargetURL: server.URL}
+	scraper, err := static.NewScraper(cfg, logger, testMetrics)
+	require.NoError(t, err)
+
+	comments, err := scraper.GetCommentsFromTask(ctx, 78357)
+
+	require.NoError(t, err)
+	require.Len(t, comments, 2)
+	assert.Equal(t, "first comment", comments[0])
+	assert.Equal(t, "second comment", comments[1])
+}

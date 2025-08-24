@@ -346,7 +346,7 @@ func TestGetTaskTypes(t *testing.T) {
 
 func TestGetAgreements(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	ctx := context.Background()
+	ctx := t.Context()
 	testMetrics := monitoring.NewMetrics(prometheus.NewRegistry())
 	testAgreement := pb.Agreement{
 		Id:       1,
@@ -585,5 +585,91 @@ func TestGetAgreements(t *testing.T) {
 		assert.Equal(t, codes.InvalidArgument, st.Code())
 		mockScraper.AssertExpectations(t)
 		require.NoError(t, mockRedis.ExpectationsWereMet())
+	})
+}
+
+func TestAddComment(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx := t.Context()
+	testMetrics := monitoring.NewMetrics(prometheus.NewRegistry())
+	dtb, _ := redismock.NewClientMock()
+	req := &pb.AddCommentRequest{
+		TaskId: 12345,
+		Author: "qa",
+		Text:   "test comment",
+	}
+	finalCommentText := fmt.Sprintf("👤 %s: %s", req.GetAuthor(), req.GetText())
+
+	t.Run("failure - one or more arguments are empty", func(t *testing.T) {
+		mockScraper := mocks.NewScraperIface(t)
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		// ACT
+		_, err := srv.AddComment(ctx, &pb.AddCommentRequest{})
+
+		// ASSERT
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.InvalidArgument, st.Code())
+		mockScraper.AssertNotCalled(t, "AddComment")
+		mockScraper.AssertNotCalled(t, "GetCommentsFromTask")
+	})
+
+	t.Run("failure - scraper AddComment returns error", func(t *testing.T) {
+		mockScraper := mocks.NewScraperIface(t)
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		mockScraper.On("AddComment", ctx, req.GetTaskId(), finalCommentText).
+			Return(assert.AnError).Once()
+
+		// ACT
+		_, err := srv.AddComment(ctx, req)
+
+		// ASSERT
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.Internal, st.Code())
+		mockScraper.AssertExpectations(t)
+		mockScraper.AssertNotCalled(t, "GetCommentsFromTask")
+	})
+
+	t.Run("failure - scraper GetCommentsFromTask returns error", func(t *testing.T) {
+		mockScraper := mocks.NewScraperIface(t)
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		mockScraper.On("AddComment", ctx, req.GetTaskId(), finalCommentText).
+			Return(nil).Once()
+		mockScraper.On("GetCommentsFromTask", ctx, req.GetTaskId()).
+			Return(nil, assert.AnError).Once()
+
+		// ACT
+		_, err := srv.AddComment(ctx, req)
+
+		// ASSERT
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.Internal, st.Code())
+		mockScraper.AssertExpectations(t)
+	})
+
+	t.Run("success", func(t *testing.T) {
+		mockScraper := mocks.NewScraperIface(t)
+		srv := server.NewGRPCServer(logger, dtb, mockScraper, testMetrics)
+
+		mockScraper.On("AddComment", ctx, req.GetTaskId(), finalCommentText).
+			Return(nil).Once()
+		mockScraper.On("GetCommentsFromTask", ctx, req.GetTaskId()).
+			Return([]string{finalCommentText}, nil).Once()
+
+		// ACT
+		comments, err := srv.AddComment(ctx, req)
+
+		// ASSERT
+		require.NoError(t, err)
+		assert.Equal(t, []string{finalCommentText}, comments.GetComments())
+		mockScraper.AssertExpectations(t)
 	})
 }

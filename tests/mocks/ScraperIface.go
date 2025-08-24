@@ -16,6 +16,24 @@ type ScraperIface struct {
 	mock.Mock
 }
 
+// AddComment provides a mock function with given fields: ctx, taskID, text
+func (_m *ScraperIface) AddComment(ctx context.Context, taskID int64, text string) error {
+	ret := _m.Called(ctx, taskID, text)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddComment")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, int64, string) error); ok {
+		r0 = rf(ctx, taskID, text)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // GetAgreementsByID provides a mock function with given fields: ctx, id
 func (_m *ScraperIface) GetAgreementsByID(ctx context.Context, id int64) ([]*olympus.Agreement, error) {
 	ret := _m.Called(ctx, id)
@@ -69,6 +87,36 @@ func (_m *ScraperIface) GetAgreementsByName(ctx context.Context, name string) ([
 
 	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
 		r1 = rf(ctx, name)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetCommentsFromTask provides a mock function with given fields: ctx, taskID
+func (_m *ScraperIface) GetCommentsFromTask(ctx context.Context, taskID int64) ([]string, error) {
+	ret := _m.Called(ctx, taskID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCommentsFromTask")
+	}
+
+	var r0 []string
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, int64) ([]string, error)); ok {
+		return rf(ctx, taskID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, int64) []string); ok {
+		r0 = rf(ctx, taskID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, int64) error); ok {
+		r1 = rf(ctx, taskID)
 	} else {
 		r1 = ret.Error(1)
 	}

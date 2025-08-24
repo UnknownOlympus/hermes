@@ -177,3 +177,29 @@ func (s *Server) GetAgreements(ctx context.Context, req *pb.GetAgreementsRequest
 
 	return response, nil
 }
+
+func (s *Server) AddComment(ctx context.Context, req *pb.AddCommentRequest) (*pb.AddCommentResponse, error) {
+	log := s.log.With("op", "AddComment")
+	log.InfoContext(ctx, "Received request", "task_id", req.GetTaskId(), "author", req.GetAuthor())
+
+	if req.GetAuthor() == "" || req.GetTaskId() == 0 || req.GetText() == "" {
+		log.ErrorContext(ctx, "One or more arguments are empty")
+		return nil, status.Errorf(codes.InvalidArgument, "all arguments must not be nil")
+	}
+
+	finalCommentText := fmt.Sprintf("👤 %s: %s", req.GetAuthor(), req.GetText())
+
+	err := s.scraper.AddComment(ctx, req.GetTaskId(), finalCommentText)
+	if err != nil {
+		log.ErrorContext(ctx, "Failed to add comment", "task_id", req.GetTaskId(), "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to add comment to task")
+	}
+
+	comments, err := s.scraper.GetCommentsFromTask(ctx, req.GetTaskId())
+	if err != nil {
+		log.ErrorContext(ctx, "Failed to get updated comments", "task_id", req.GetTaskId(), "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to get updated comments")
+	}
+
+	return &pb.AddCommentResponse{Comments: comments}, nil
+}
