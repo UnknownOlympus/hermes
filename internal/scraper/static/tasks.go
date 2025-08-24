@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -349,4 +350,81 @@ func (s *Scraper) parseTaskTypes(body io.Reader) ([]string, error) {
 	})
 
 	return taskTypes, nil
+}
+
+// AddComment executes post request to add comment for a given task.
+func (s *Scraper) AddComment(ctx context.Context, taskID int64, text string) error {
+	formData := url.Values{
+		"core_section":     {"task"},
+		"action":           {"comment_add"},
+		"reply_id":         {"0"},
+		"standart_comment": {"1"},
+		"id":               {strconv.FormatInt(taskID, 10)},
+		"opis":             {text},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.cfg.TargetURL, strings.NewReader(formData.Encode()))
+	if err != nil {
+		s.metrics.ScrapeErrors.WithLabelValues("task", "create_request_failed").Inc()
+		return fmt.Errorf("failed to create tasks request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		s.metrics.ScrapeErrors.WithLabelValues("task", "request_failed").Inc()
+		return fmt.Errorf("failed to perform add comment request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		s.metrics.ScrapeErrors.WithLabelValues("task", "bad_status_code").Inc()
+		return fmt.Errorf("add comment request failed with status: %s", resp.Status)
+	}
+
+	s.log.InfoContext(ctx, "Successfully added comment to task", "task_id", taskID)
+
+	return nil
+}
+
+// GetCommentsFromTask gets and parses only the comments for a given task.
+func (s *Scraper) GetCommentsFromTask(ctx context.Context, taskID int64) ([]string, error) {
+	data := url.Values{
+		"core_section": {"task"},
+		"action":       {"show"},
+		"id":           {strconv.FormatInt(taskID, 10)},
+	}
+
+	resp, err := s.getHTMLResponse(ctx, &data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task page %d: %w", taskID, err)
+	}
+	defer resp.Body.Close()
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse task page: %w", err)
+	}
+
+	var comments []string
+
+	// 1. Find each main comment block. The selector looks for a div
+	//    with a class 'j_card_comment_div' and an ID that starts with 'comment2_'.
+	doc.Find("div.j_card_comment_div[id^='comment2_']").Each(func(_ int, selector *goquery.Selection) {
+		// 2. Within each block, find the author's name.
+		// author := strings.TrimSpace(s.Find("div[style*='font-weight: bold']").Text())
+		// 3. Find the comment's date and time.
+		// dateTime := strings.TrimSpace(s.Find("div[style*='float: right']").Text())
+		// 4. Find the comment text itself. It's in a span with an ID like 'comment_xxxxx_id'.
+		commentText := strings.TrimSpace(selector.Find("span[id^='comment_']").Text())
+
+		// 5. Format the final string.
+		// Example format: "👤 Author Name (23.08.2025 14:25): The comment text"
+		// formattedComment := fmt.Sprintf("👤 %s (%s): %s", author, dateTime, commentText)
+
+		comments = append(comments, commentText)
+	})
+
+	return comments, nil
 }

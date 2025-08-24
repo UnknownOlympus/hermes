@@ -38,6 +38,8 @@ type ScraperIface interface {
 	GetDailyTasks(ctx context.Context, date time.Time) ([]*pb.Task, string, error)
 	GetAgreementsByID(ctx context.Context, id int64) ([]*pb.Agreement, error)
 	GetAgreementsByName(ctx context.Context, name string) ([]*pb.Agreement, error)
+	AddComment(ctx context.Context, taskID int64, text string) error
+	GetCommentsFromTask(ctx context.Context, taskID int64) ([]string, error)
 }
 
 // NewScraper creates a new client, configures it, and performs login.
